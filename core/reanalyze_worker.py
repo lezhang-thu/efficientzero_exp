@@ -8,15 +8,14 @@ import core.ctree.cytree as cytree
 
 from torch.cuda.amp import autocast as autocast
 from core.mcts import MCTS
-from core.model import concat_output, concat_output_value
 from core.utils import prepare_observation_lst, LinearSchedule
 
 
 #@ray.remote
-@ray.remote(resources={'node:172.16.6.223': 0.01}, num_gpus=0.125)
+@ray.remote(resources={'node:172.16.6.223': 0.01})
 class BatchWorker_CPU(object):
-    def __init__(self, worker_id, replay_buffer, storage, batch_storage,
-                 mcts_storage, config):
+    def __init__(self, worker_id, replay_buffer, storage, mcts_storage,
+                 config):
         """CPU Batch Worker for reanalyzing targets, see Appendix.
         Prepare the context concerning CPU overhead
         Parameters
@@ -27,40 +26,30 @@ class BatchWorker_CPU(object):
             Replay buffer
         storage: Any
             The model storage
-        batch_storage: Any
-            The batch storage (batch queue)
         mcts_storage: Ant
             The mcts-related contexts storage
         """
         self.worker_id = worker_id
         self.replay_buffer = replay_buffer
         self.storage = storage
-        self.batch_storage = batch_storage
         self.mcts_storage = mcts_storage
         self.config = config
 
-        self.last_model_index = -1
         self.batch_max_num = 20
         self.beta_schedule = LinearSchedule(
             config.training_steps + config.last_steps,
             initial_p=config.priority_prob_beta,
             final_p=1.0)
 
-    def make_batch(self, batch_context, ratio, weights=None):
+    def make_batch(self, batch_context):
         """prepare the context of a batch
         reward_value_context:        the context of reanalyzed value targets
-        policy_re_context:           the context of reanalyzed policy targets
         policy_non_re_context:       the context of non-reanalyzed policy targets
         inputs_batch:                the inputs of batch
-        weights:                     the target model weights
         Parameters
         ----------
         batch_context: Any
             batch context from replay buffer
-        ratio: float
-            ratio of reanalyzed policy (value is 100% reanalyzed)
-        weights: Any
-            the target model weights
         """
         # obtain the batch context from replay buffer
         game_lst, game_pos_lst, indices_lst, weights_lst, make_time_lst = batch_context
@@ -102,6 +91,7 @@ class BatchWorker_CPU(object):
         ]
         for i in range(len(inputs_batch)):
             inputs_batch[i] = np.asarray(inputs_batch[i])
+
         total_transitions = ray.get(self.replay_buffer.get_total_len.remote())
 
         # target reward, value
@@ -111,7 +101,6 @@ class BatchWorker_CPU(object):
         batch_policies = self._prepare_policy_non_re(indices_lst, game_lst,
                                                      game_pos_lst)
         targets_batch = [batch_value_prefixs, batch_values, batch_policies]
-
         self.mcts_storage.push([inputs_batch, targets_batch])
 
     def _prepare_policy_non_re(self, indices, games, state_index_lst):
@@ -162,7 +151,6 @@ class BatchWorker_CPU(object):
         device = config.device
         batch_values, batch_value_prefixs = [], []
 
-        horizon_id = 0
         for game, state_index, idx in zip(games, state_index_lst, indices):
             traj_len = len(game)
             reward_lst = game.rewards
@@ -172,7 +160,7 @@ class BatchWorker_CPU(object):
             target_value_prefixs = []
 
             value_prefix = 0.0
-            base_index = state_index
+            horizon_id = 0
 
             # off-policy correction: shorter horizon of td steps
             delta_td = (total_transitions - idx) // config.auto_td_steps
@@ -183,26 +171,24 @@ class BatchWorker_CPU(object):
                     state_index, state_index + config.num_unroll_steps + 1):
                 bootstrap_index = current_index + td_steps
                 if bootstrap_index < traj_len:
-                    value = root_values[current_index]
+                    value = root_values[bootstrap_index]
                 else:
                     value = 0
-                value *= config.discount**td_steps_lst
+                value *= config.discount**td_steps
                 for i, reward in enumerate(
                         reward_lst[current_index:bootstrap_index]):
                     value += reward * config.discount**i
 
                 # reset every lstm_horizon_len
-                if horizon_id % lstm_horizon_len == 0:
+                if horizon_id % config.lstm_horizon_len == 0:
                     value_prefix = 0.0
-                    base_index = current_index
                 horizon_id += 1
 
                 if current_index < traj_len:
                     target_values.append(value)
                     # Since the horizon is small and the discount is close to 1.
                     # Compute the reward sum to approximate the value prefix for simplification
-                    value_prefix += reward_lst[
-                        current_index]  # * config.discount ** (current_index - base_index)
+                    value_prefix += reward_lst[current_index]
                     target_value_prefixs.append(value_prefix)
                 else:
                     target_values.append(0)
@@ -241,9 +227,10 @@ class BatchWorker_CPU(object):
             if self.mcts_storage.get_len() < 20:
                 # Observation will be deleted if replay buffer is full. (They are stored in the ray object store)
                 try:
-                    self.make_batch(batch_context,
-                                    self.config.revisit_policy_search_rate,
-                                    weights=target_weights)
+                    self.make_batch(
+                        batch_context,
+                        self.config.revisit_policy_search_rate,
+                    )
                 except:
                     print('Data is deleted...')
                     time.sleep(0.1)

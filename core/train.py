@@ -440,11 +440,8 @@ def update_weights(model,
     return loss_data, td_data, priority_data, scaler
 
 
-#@ray.remote(num_cpus=4, num_gpus=2, resources={'node:172.16.6.197': 0.5})
-def _train(model, target_model, replay_buffer, shared_storage, batch_storage,
-           config):
-    #def _train(model, target_model, replay_buffer, shared_storage, batch_storage,
-    #           config, summary_writer):
+def _train(model, target_model, replay_buffer, shared_storage, mcts_storage,
+           config, summary_writer):
     """training loop
     Parameters
     ----------
@@ -456,8 +453,8 @@ def _train(model, target_model, replay_buffer, shared_storage, batch_storage,
         replay buffer
     shared_storage: Any
         model storage
-    batch_storage: Any
-        batch storage (queue)
+    mcts_storage: Any
+        mcts storage (queue)
     summary_writer: Any
         logging for tensorboard
     """
@@ -488,7 +485,6 @@ def _train(model, target_model, replay_buffer, shared_storage, batch_storage,
         time.sleep(1)
         pass
     print('Begin training...')
-    #exit(0)
     # set signals for other workers
     shared_storage.set_start_signal.remote()
 
@@ -508,7 +504,7 @@ def _train(model, target_model, replay_buffer, shared_storage, batch_storage,
             replay_buffer.remove_to_fit.remote()
 
         # obtain a batch
-        batch = batch_storage.pop()
+        batch = mcts_storage.pop()
         if batch is None:
             time.sleep(0.3)
             continue
@@ -541,16 +537,13 @@ def _train(model, target_model, replay_buffer, shared_storage, batch_storage,
                                       config, scaler, vis_result)
 
         if step_count % config.log_interval == 0:
-            pass
-            #_log(config, step_count, log_data[0:3], model, replay_buffer, lr,
-            #     shared_storage, summary_writer, vis_result)
+            _log(config, step_count, log_data[0:3], model, replay_buffer, lr,
+                 shared_storage, summary_writer, vis_result)
 
         # The queue is empty.
-        if step_count >= 100 and step_count % 50 == 0 and batch_storage.get_len(
+        if step_count >= 100 and step_count % 50 == 0 and mcts_storage.get_len(
         ) == 0:
-            print(
-                'Warning: Batch Queue is empty (Require more batch actors Or batch actor fails).'
-            )
+            print('Warning: MCTS Queue is empty')
 
         step_count += 1
 
@@ -591,7 +584,6 @@ def train(config, summary_writer, model_path=None):
     storage = SharedStorage.remote(model, target_model)
 
     # prepare the batch and mcts context storage
-    batch_storage = QueueStorage(15, 20)
     mcts_storage = QueueStorage(18, 25)
     replay_buffer = ReplayBuffer.remote(config=config)
 
@@ -603,9 +595,8 @@ def train(config, summary_writer, model_path=None):
     # debug - end
 
     # debug - start
-    #config.num_actors = 1
+    config.num_actors = 20
     print("self play: {}".format(config.num_actors))
-    #exit(0)
     # debug -end
 
     # other workers
@@ -613,7 +604,7 @@ def train(config, summary_writer, model_path=None):
 
     # reanalyze workers
     cpu_workers = [
-        BatchWorker_CPU.remote(idx, replay_buffer, storage, batch_storage,
+        BatchWorker_CPU.remote(idx, replay_buffer, storage, mcts_storage,
                                mcts_storage, config)
         for idx in range(config.cpu_actor)
     ]
@@ -626,28 +617,28 @@ def train(config, summary_writer, model_path=None):
     #              config) for idx in range(10)
     #]
     workers += [cpu_worker.run.remote() for cpu_worker in cpu_workers]
-    config.gpu_actor = 12
-    gpu_workers = [
-        BatchWorker_GPU.options(resources={
-            'node:172.16.6.223': 0.01
-        },
-                                num_gpus=0.18).remote(idx, replay_buffer,
-                                                      storage, batch_storage,
-                                                      mcts_storage, config)
-        for idx in range(config.gpu_actor // 2)
-    ]
+    #config.gpu_actor = 12
+    #gpu_workers = [
+    #    BatchWorker_GPU.options(resources={
+    #        'node:172.16.6.223': 0.01
+    #    },
+    #                            num_gpus=0.18).remote(idx, replay_buffer,
+    #                                                  storage, batch_storage,
+    #                                                  mcts_storage, config)
+    #    for idx in range(config.gpu_actor // 2)
+    #]
 
-    gpu_workers += [
-        BatchWorker_GPU.options(resources={
-            'node:172.16.6.197': 0.01
-        },
-                                num_gpus=0.15).remote(
-                                    idx + config.gpu_actor // 2, replay_buffer,
-                                    storage, batch_storage, mcts_storage,
-                                    config)
-        for idx in range(config.gpu_actor - config.gpu_actor // 2)
-    ]
-    workers += [gpu_worker.run.remote() for gpu_worker in gpu_workers]
+    #gpu_workers += [
+    #    BatchWorker_GPU.options(resources={
+    #        'node:172.16.6.197': 0.01
+    #    },
+    #                            num_gpus=0.15).remote(
+    #                                idx + config.gpu_actor // 2, replay_buffer,
+    #                                storage, batch_storage, mcts_storage,
+    #                                config)
+    #    for idx in range(config.gpu_actor - config.gpu_actor // 2)
+    #]
+    #workers += [gpu_worker.run.remote() for gpu_worker in gpu_workers]
 
     # self-play workers
     data_workers = [
@@ -656,13 +647,11 @@ def train(config, summary_writer, model_path=None):
     ]
     workers += [worker.run.remote() for worker in data_workers]
     # test workers
-    #workers += [_test.remote(config, storage)]
+    workers += [_test.remote(config, storage)]
 
     # training loop
     final_weights = _train(model, target_model, replay_buffer, storage,
-                           batch_storage, config)
-    #final_weights = _train(model, target_model, replay_buffer, storage,
-    #                       batch_storage, config, summary_writer)
+                           mcts_storage, config, summary_writer)
 
     ray.wait(workers)
     print('Training over...')
