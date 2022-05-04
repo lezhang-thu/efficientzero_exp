@@ -4,8 +4,7 @@ import time
 import numpy as np
 
 
-#@ray.remote(max_restarts=-1, resources={'node:192.168.200.105': 1.0})
-@ray.remote(resources={'node:172.16.6.223': 0.01})
+@ray.remote
 class ReplayBuffer(object):
     """Reference : DISTRIBUTED PRIORITIZED EXPERIENCE REPLAY
     Algo. 1 and Algo. 2 in Page-3 of (https://arxiv.org/pdf/1803.00933.pdf

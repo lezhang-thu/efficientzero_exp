@@ -13,9 +13,7 @@ from core.game import GameHistory
 from core.utils import select_action, prepare_observation_lst
 
 
-#@ray.remote(num_gpus=0.125)
-#@ray.remote(num_gpus=0.125, resources={'gpu_memory': 0.25, 'node:172.16.6.223': 0.05})
-@ray.remote(num_gpus=0.18, resources={'node:172.16.6.197': 0.01})
+@ray.remote(num_gpus=0.2)
 class DataWorker(object):
     def __init__(self, rank, replay_buffer, storage, config):
         """Data Worker for collecting data through self-play

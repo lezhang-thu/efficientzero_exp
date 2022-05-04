@@ -11,8 +11,7 @@ from core.mcts import MCTS
 from core.utils import prepare_observation_lst, LinearSchedule
 
 
-#@ray.remote
-@ray.remote(resources={'node:172.16.6.223': 0.01})
+@ray.remote
 class BatchWorker_CPU(object):
     def __init__(self, worker_id, replay_buffer, storage, mcts_storage,
                  config):
@@ -223,14 +222,10 @@ class BatchWorker_CPU(object):
             if trained_steps >= self.config.training_steps + self.config.last_steps:
                 time.sleep(30)
                 break
-
             if self.mcts_storage.get_len() < 20:
                 # Observation will be deleted if replay buffer is full. (They are stored in the ray object store)
                 try:
-                    self.make_batch(
-                        batch_context,
-                        self.config.revisit_policy_search_rate,
-                    )
+                    self.make_batch(batch_context)
                 except:
                     print('Data is deleted...')
                     time.sleep(0.1)

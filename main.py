@@ -149,16 +149,16 @@ if __name__ == '__main__':
         runtime_env = {
             "working_dir": "/home/ubuntu/extend/zhaoshu/EfficientZero-main"
         }
+        args.num_gpus = 2
+        args.num_cpus = 32
+        ray.init(num_gpus=args.num_gpus, num_cpus=args.num_cpus)  #,
+        #object_store_memory=args.object_store_memory)
         #ray.init(
-        #    num_gpus=args.num_gpus,
-        #    num_cpus=args.num_cpus,
-        #    object_store_memory=args.object_store_memory)
-        ray.init(
-            address='auto',
-            #num_gpus=args.num_gpus,
-            #num_cpus=args.num_cpus,
-            #resources={'gpu_memory': 8},
-            runtime_env=runtime_env)
+        #    address='auto',
+        #    #num_gpus=args.num_gpus,
+        #    #num_cpus=args.num_cpus,
+        #    #resources={'gpu_memory': 8},
+        #    runtime_env=runtime_env)
         print('*' * 20)
         print('Connect ray cluster success!')
         print('*' * 20)

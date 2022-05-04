@@ -13,12 +13,7 @@ from core.game import GameHistory
 from core.utils import select_action, prepare_observation_lst
 
 
-#@ray.remote(num_gpus=0.25)
-@ray.remote(num_gpus=0.25,
-            resources={
-                'gpu_memory': 0.25,
-                'node:172.16.6.223': 0.05
-            })
+@ray.remote(num_gpus=0.16)
 def _test(config, shared_storage):
     test_model = config.get_uniform_network()
     best_test_score = float('-inf')

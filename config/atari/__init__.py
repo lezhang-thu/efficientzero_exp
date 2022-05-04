@@ -49,7 +49,8 @@ class AtariConfig(BaseConfig):
             auto_td_steps_ratio=0.3,
             # replay window
             start_transitions=8,
-            total_transitions=100 * 1000,
+            #total_transitions=100 * 1000,
+            total_transitions=int(10e6),
             transition_num=1,
             # frame skip & stack observation
             frame_skip=4,

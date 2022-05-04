@@ -11,11 +11,11 @@ from torch.nn import L1Loss
 from torch.cuda.amp import autocast as autocast
 from torch.cuda.amp import GradScaler as GradScaler
 from core.log import _log
-#from core.test import _test
+from core.test import _test
 from core.replay_buffer import ReplayBuffer
 from core.storage import SharedStorage, QueueStorage
 from core.selfplay_worker import DataWorker
-from core.reanalyze_worker import BatchWorker_GPU, BatchWorker_CPU
+from core.reanalyze_worker import BatchWorker_CPU
 
 
 def consist_loss_func(f1, f2):
@@ -478,12 +478,10 @@ def _train(model, target_model, replay_buffer, shared_storage, mcts_storage,
 
     # wait until collecting enough data to start
     while not (ray.get(replay_buffer.get_total_len.remote()) >=
-               #config.batch_size * 2):
                config.start_transitions):
-        print("replay buffer current size: {}".format(
-            ray.get(replay_buffer.get_total_len.remote())))
+        #print("replay buffer current size: {}".format(
+        #    ray.get(replay_buffer.get_total_len.remote())))
         time.sleep(1)
-        pass
     print('Begin training...')
     # set signals for other workers
     shared_storage.set_start_signal.remote()
@@ -491,13 +489,13 @@ def _train(model, target_model, replay_buffer, shared_storage, mcts_storage,
     step_count = 0
     # Note: the interval of the current model and the target model is between x and 2x. (x = target_model_interval)
     # recent_weights is the param of the target model
-    recent_weights = model.get_weights()
+    #recent_weights = model.get_weights()
 
     # while loop
     while step_count < config.training_steps + config.last_steps:
         # debug - start
-        if step_count % 1 == 0:
-            ray.get(replay_buffer.info.remote())
+        #if step_count % 1 == 0:
+        #    ray.get(replay_buffer.info.remote())
         # debug - end
         # remove data if the replay buffer is full. (more data settings)
         if step_count % 1000 == 0:
@@ -519,9 +517,9 @@ def _train(model, target_model, replay_buffer, shared_storage, mcts_storage,
             shared_storage.set_weights.remote(model.get_weights())
 
         # update model for reanalyzing
-        if step_count % config.target_model_interval == 0:
-            shared_storage.set_target_weights.remote(recent_weights)
-            recent_weights = model.get_weights()
+        #if step_count % config.target_model_interval == 0:
+        #    shared_storage.set_target_weights.remote(recent_weights)
+        #    recent_weights = model.get_weights()
 
         if step_count % config.vis_interval == 0:
             vis_result = True
@@ -588,14 +586,13 @@ def train(config, summary_writer, model_path=None):
     replay_buffer = ReplayBuffer.remote(config=config)
 
     # debug - start
-    print(ray.get(replay_buffer.size.remote()))
     print('*' * 20)
     print("Create replay_buffer success!")
     print('*' * 20)
     # debug - end
 
     # debug - start
-    config.num_actors = 20
+    config.num_actors = 10
     print("self play: {}".format(config.num_actors))
     # debug -end
 
@@ -605,8 +602,7 @@ def train(config, summary_writer, model_path=None):
     # reanalyze workers
     cpu_workers = [
         BatchWorker_CPU.remote(idx, replay_buffer, storage, mcts_storage,
-                               mcts_storage, config)
-        for idx in range(config.cpu_actor)
+                               config) for idx in range(config.cpu_actor)
     ]
 
     #cpu_workers += [
@@ -642,8 +638,14 @@ def train(config, summary_writer, model_path=None):
 
     # self-play workers
     data_workers = [
-        DataWorker.remote(rank, replay_buffer, storage, config)
-        for rank in range(0, config.num_actors)
+        DataWorker.options(num_gpus=0.2).remote(rank, replay_buffer, storage,
+                                                config)
+        for rank in range(0, config.num_actors // 2)
+    ]
+    data_workers += [
+        DataWorker.options(num_gpus=0.16).remote(rank, replay_buffer, storage,
+                                                 config)
+        for rank in range(config.num_actors // 2, config.num_actors)
     ]
     workers += [worker.run.remote() for worker in data_workers]
     # test workers
