@@ -13,7 +13,7 @@ from core.game import GameHistory
 from core.utils import select_action, prepare_observation_lst
 
 
-@ray.remote(num_gpus=0.16)
+@ray.remote(num_gpus=1)
 def _test(config, shared_storage):
     test_model = config.get_uniform_network()
     best_test_score = float('-inf')

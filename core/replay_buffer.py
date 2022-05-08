@@ -24,10 +24,7 @@ class ReplayBuffer(object):
         self._eps_collected = 0
         self.base_idx = 0
         self._alpha = config.priority_prob_alpha
-        # debug - start
-        #self.transition_top = int(config.transition_num * 10**4)
-        # debug - end
-        self.transition_top = int(config.transition_num * 10**6)
+        self.transition_top = int(50e3)
         self.clear_time = 0
 
     def save_pools(self, pools, gap_step):

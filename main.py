@@ -1,13 +1,6 @@
 import argparse
 import logging.config
 import os
-
-# debug - start
-import sys
-
-print(sys.path)
-# debug - end
-
 import numpy as np
 import ray
 import torch
@@ -192,8 +185,9 @@ if __name__ == '__main__':
                 model_path = args.model_path
             else:
                 model_path = None
-            model, weights = train(game_config, summary_writer, model_path)
-            model.set_weights(weights)
+            weights = train(game_config)
+            model = game_config.get_uniform_network().to(
+                config.device).set_weights(weights)
             total_steps = game_config.training_steps + game_config.last_steps
             test_score, test_path = test(game_config,
                                          model.to(device),

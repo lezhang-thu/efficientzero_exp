@@ -35,19 +35,13 @@ class QueueStorage(object):
 
 @ray.remote
 class SharedStorage(object):
-    def __init__(self, model, target_model):
+    def __init__(self, config):
         """Shared storage for models and others
-        Parameters
-        ----------
-        model: any
-            models for self-play (update every checkpoint_interval)
-        target_model: any
-            models for reanalyzing (update every target_model_interval)
         """
         self.step_counter = 0
         self.test_counter = 0
-        self.model = model
-        self.target_model = target_model
+        # model for self-play (update every checkpoint_interval)
+        self.model = config.get_uniform_network()
         self.ori_reward_log = []
         self.reward_log = []
         self.reward_max_log = []
@@ -71,12 +65,6 @@ class SharedStorage(object):
 
     def set_weights(self, weights):
         return self.model.set_weights(weights)
-
-    def get_target_weights(self):
-        return self.target_model.get_weights()
-
-    def set_target_weights(self, weights):
-        return self.target_model.set_weights(weights)
 
     def incr_counter(self):
         self.step_counter += 1

@@ -223,9 +223,4 @@ class BatchWorker_CPU(object):
                 time.sleep(30)
                 break
             if self.mcts_storage.get_len() < 20:
-                # Observation will be deleted if replay buffer is full. (They are stored in the ray object store)
-                try:
-                    self.make_batch(batch_context)
-                except:
-                    print('Data is deleted...')
-                    time.sleep(0.1)
+                self.make_batch(batch_context)
